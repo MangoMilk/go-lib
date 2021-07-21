@@ -1,4 +1,4 @@
-module go-lib
+module github.com/MangoMilk/go-lib
 
 go 1.16
 
