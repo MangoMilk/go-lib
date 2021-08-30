@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"time"
+	//"time"
 )
 
 const (
@@ -58,8 +58,8 @@ func RunRegister(config *RegisterConfig) {
 		select {
 		case res := <-klCh:
 			if res != nil {
-				fmt.Println("lease success", time.Now())
-				fmt.Println(res)
+				//fmt.Println("lease success", time.Now())
+				//fmt.Println(res)
 			}
 		}
 	}
