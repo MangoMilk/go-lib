@@ -35,6 +35,7 @@ const (
 )
 
 type Discovery struct {
+	Env         ServiceEnv
 	loadBalance SupportLoadBalance
 	serviceMap  ServiceMap
 }
@@ -57,10 +58,10 @@ func (d *Discovery) watch(cli *clientv3.Client, prefix string) {
 	}
 }
 
-func (d *Discovery) GetService(env ServiceEnv, s SupportService) (addr string) {
+func (d *Discovery) GetService(s SupportService) (addr string) {
 
-	if d.serviceMap[env] != nil && d.serviceMap[env][s] != nil {
-		services := d.serviceMap[env][s]
+	if d.serviceMap[d.Env][s] != nil {
+		services := d.serviceMap[d.Env][s]
 		if l := len(services); l > 0 {
 			switch d.loadBalance {
 			case SupportLoadBalancePolling:
@@ -78,8 +79,8 @@ func (d *Discovery) SetLoadBalance(lb SupportLoadBalance) {
 	d.loadBalance = lb
 }
 
-func (d *Discovery) UpdateServiceStatus(env ServiceEnv, s SupportService, addr string, status ServiceStatus) {
-	for _, v := range d.serviceMap[env][s] {
+func (d *Discovery) UpdateServiceStatus(s SupportService, addr string, status ServiceStatus) {
+	for _, v := range d.serviceMap[d.Env][s] {
 		if v.Addr == addr {
 			v.Status = status
 		}
@@ -119,6 +120,7 @@ func RunDiscovery(config *DiscoveryConfig) {
 
 	// new Discovery
 	D = &Discovery{
+		Env:         config.Env,
 		loadBalance: config.LoadBalance,
 		serviceMap:  NewServiceMap(config.Env),
 	}
