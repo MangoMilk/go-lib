@@ -26,90 +26,13 @@ import (
 	"fmt"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"math/rand"
-	"strings"
 	"time"
 )
 
 const (
-	// Etcd Key: /{Prefix}/{SupportService}/{ServiceAddr}
-	serviceNameUnitIndex = 2
-	serviceAddrUnitIndex = 3
-
 	dialTimeOut = time.Second * 5
 	initTimeOut = time.Second * 5
 )
-
-type SupportService string
-
-const (
-	SupportServiceGood    SupportService = "good"
-	SupportServiceAddress SupportService = "address"
-)
-
-type ServiceStatus int
-
-const (
-	ServiceStatusNormal  ServiceStatus = 1
-	ServiceStatusFailure ServiceStatus = 0
-)
-
-type Service struct {
-	Name   SupportService
-	Addr   string
-	Status ServiceStatus
-	// TODO more service node info to support more load balance strategy
-	//Weight   int
-	//Area     string
-	//Distance int
-	//Load     int
-}
-
-type ServiceMap map[SupportService][]*Service
-
-func (m ServiceMap) put(k string, v string) {
-	//fmt.Println("Put Service:")
-
-	keyUnits := strings.Split(k, "/")
-
-	if len(keyUnits) < 4 {
-		return
-	}
-
-	name, addr := SupportService(keyUnits[serviceNameUnitIndex]), keyUnits[serviceAddrUnitIndex]
-
-	for _, v := range m[name] {
-		if v.Addr == addr {
-			// TODO assign new service info
-			v.Name = name
-			v.Addr = addr
-			v.Status = ServiceStatusNormal
-			return
-		}
-	}
-
-	m[name] = append(m[name], &Service{
-		Name:   name,
-		Addr:   addr,
-		Status: ServiceStatusNormal,
-	})
-
-	//fmt.Println(m)
-}
-
-func (m ServiceMap) del(k string) {
-	//fmt.Println("Del Service: ",k)
-
-	keyUnits := strings.Split(k, "/")
-	name := SupportService(keyUnits[serviceNameUnitIndex])
-	addr := keyUnits[serviceAddrUnitIndex]
-	for idx, v := range m[name] {
-		if v.Addr == addr {
-			m[name] = append(m[name][0:idx], m[name][idx+1:]...)
-			return
-		}
-	}
-}
 
 type Discovery struct {
 	loadBalance SupportLoadBalance
@@ -134,10 +57,10 @@ func (d *Discovery) watch(cli *clientv3.Client, prefix string) {
 	}
 }
 
-func (d *Discovery) GetService(s SupportService) (addr string) {
+func (d *Discovery) GetService(env ServiceEnv, s SupportService) (addr string) {
 
-	if d.serviceMap[s] != nil {
-		services := d.serviceMap[s]
+	if d.serviceMap[env] != nil && d.serviceMap[env][s] != nil {
+		services := d.serviceMap[env][s]
 		if l := len(services); l > 0 {
 			switch d.loadBalance {
 			case SupportLoadBalancePolling:
@@ -151,92 +74,30 @@ func (d *Discovery) GetService(s SupportService) (addr string) {
 	return
 }
 
-type SupportLoadBalance int
-
-func (lb SupportLoadBalance) polling(services []*Service) (addr string) {
-
-	l := len(services)
-	countL := l
-
-	for countL > 0 {
-		if pollingCount >= l {
-			pollingCount = 0
-		}
-
-		if services[pollingCount%l].Status == ServiceStatusNormal {
-			addr = services[pollingCount%l].Addr
-			pollingCount++
-			break
-		}
-
-		pollingCount++
-		countL--
-	}
-
-	return
-}
-
-// range: [rangeFrom,rangeTo)
-func (lb SupportLoadBalance) random(services []*Service, from int, to int) string {
-
-	if len(services) == 0 || from >= to || from < 0 || to < 0 {
-		return ""
-	}
-
-	if len(services) == 1 {
-		if services[0].Status == ServiceStatusNormal {
-			return services[0].Addr
-		} else {
-			return ""
-		}
-	}
-
-	rand.Seed(time.Now().Unix())
-	r := from + rand.Intn(to-from)
-	if services[r].Status == ServiceStatusNormal {
-		return services[r].Addr
-	} else {
-		var s []*Service
-		if r == from {
-			s = services[r+1:]
-		} else if r == to-1 {
-			s = services[:r]
-		} else {
-			s = append(services[:r], services[r+1:]...)
-		}
-
-		return lb.random(s, 0, len(s))
-	}
-}
-
-var pollingCount = 0
-
-const (
-	SupportLoadBalancePolling SupportLoadBalance = iota
-	SupportLoadBalanceRandom
-
-	// TODO more strategy will open after more node info be supported.
-	//SupportLoadBalanceWeight
-	//SupportLoadBalanceDistance
-	//SupportLoadBalanceLoad
-)
-
 func (d *Discovery) SetLoadBalance(lb SupportLoadBalance) {
 	d.loadBalance = lb
 }
 
-func (d *Discovery) UpdateServiceStatus(s SupportService, addr string, status ServiceStatus) {
-	for _, v := range d.serviceMap[s] {
+func (d *Discovery) UpdateServiceStatus(env ServiceEnv, s SupportService, addr string, status ServiceStatus) {
+	for _, v := range d.serviceMap[env][s] {
 		if v.Addr == addr {
 			v.Status = status
 		}
 	}
 }
 
-func RunDiscovery(host string, port int, prefix string, lb SupportLoadBalance) {
+type DiscoveryConfig struct {
+	Host        string
+	Port        int
+	Prefix      string
+	Env         ServiceEnv
+	LoadBalance SupportLoadBalance
+}
+
+func RunDiscovery(config *DiscoveryConfig) {
 	// TODO support cluster discovery && auto find the work one.
 	// dial
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{addr},
 		DialTimeout: dialTimeOut,
@@ -251,15 +112,15 @@ func RunDiscovery(host string, port int, prefix string, lb SupportLoadBalance) {
 	// first get
 	ctx, cancel := context.WithTimeout(context.Background(), initTimeOut)
 	defer cancel()
-	gresp, err := cli.Get(ctx, prefix, clientv3.WithPrefix())
+	gresp, err := cli.Get(ctx, config.Prefix, clientv3.WithPrefix())
 	if err != nil {
 		panic(err)
 	}
 
 	// new Discovery
 	D = &Discovery{
-		loadBalance: lb,
-		serviceMap:  make(ServiceMap),
+		loadBalance: config.LoadBalance,
+		serviceMap:  NewServiceMap(config.Env),
 	}
 
 	// assign serviceMap
@@ -268,5 +129,5 @@ func RunDiscovery(host string, port int, prefix string, lb SupportLoadBalance) {
 	}
 
 	// watch
-	D.watch(cli, prefix)
+	D.watch(cli, config.Prefix)
 }

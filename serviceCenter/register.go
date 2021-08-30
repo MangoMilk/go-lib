@@ -4,14 +4,24 @@ import (
 	"context"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"time"
 )
 
 const (
 	leaseTTL int64 = 5 // second
 )
 
-func RunRegister(host string, port int, prefix string, service SupportService, serviceAddr string) {
-	addr := fmt.Sprintf("%s:%d", host, port)
+type RegisterConfig struct {
+	Host        string
+	Port        int
+	Prefix      string
+	Env         string
+	Service     SupportService
+	ServiceAddr string
+}
+
+func RunRegister(config *RegisterConfig) {
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	conf := clientv3.Config{
 		Endpoints:   []string{addr},
 		DialTimeout: dialTimeOut,
@@ -32,14 +42,11 @@ func RunRegister(host string, port int, prefix string, service SupportService, s
 	}
 
 	// register service node
-	key := fmt.Sprintf("%s/%s/%s", prefix, service, serviceAddr)
-	_, putErr := clientv3.NewKV(cli).Put(context.Background(), key, serviceAddr, clientv3.WithLease(leaseRes.ID))
+	key := fmt.Sprintf("%s/%s/%s/%s", config.Prefix, config.Env, config.Service, config.ServiceAddr)
+	_, putErr := clientv3.NewKV(cli).Put(context.Background(), key, config.ServiceAddr, clientv3.WithLease(leaseRes.ID))
 	if putErr != nil {
 		panic(putErr)
 	}
-
-	//fmt.Println("Put Res: ")
-	//fmt.Println(putRes)
 
 	// auto lease
 	klCh, klErr := lease.KeepAlive(context.Background(), leaseRes.ID)
@@ -51,8 +58,8 @@ func RunRegister(host string, port int, prefix string, service SupportService, s
 		select {
 		case res := <-klCh:
 			if res != nil {
-				//fmt.Println("lease success", time.Now())
-				//fmt.Println(res)
+				fmt.Println("lease success", time.Now())
+				fmt.Println(res)
 			}
 		}
 	}
