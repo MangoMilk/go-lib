@@ -12,12 +12,12 @@ const (
 )
 
 type RegisterConfig struct {
-	Host        string
-	Port        int
-	Prefix      string
-	Env         string
-	Service     SupportService
-	ServiceAddr string
+	Host        string         `yaml:"Host"`
+	Port        int            `yaml:"Port"`
+	Prefix      string         `yaml:"Prefix"`
+	Env         string         `yaml:"Env"`
+	Service     SupportService `yaml:"Service"`
+	ServiceAddr string         `yaml:"ServiceAddr"`
 }
 
 func RunRegister(config *RegisterConfig) {

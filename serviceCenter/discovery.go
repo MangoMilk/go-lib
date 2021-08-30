@@ -88,11 +88,11 @@ func (d *Discovery) UpdateServiceStatus(s SupportService, addr string, status Se
 }
 
 type DiscoveryConfig struct {
-	Host        string
-	Port        int
-	Prefix      string
-	Env         ServiceEnv
-	LoadBalance SupportLoadBalance
+	Host        string             `yaml:"Host"`
+	Port        int                `yaml:"Port"`
+	Prefix      string             `yaml:"Prefix"`
+	Env         ServiceEnv         `yaml:"Env"`
+	LoadBalance SupportLoadBalance `yaml:"LoadBalance"`
 }
 
 func RunDiscovery(config *DiscoveryConfig) {
